@@ -114,7 +114,7 @@ void print_routing_table(void) {
 
 
 
-char find_routing_table_owner(struct routing_entry table[]) {
+char get_routing_table_owner(struct routing_entry table[]) {
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
 		if (table[i].cost == 0 && table[i].router_name != 0) {
 			return table[i].next_hop_router;
@@ -165,7 +165,11 @@ void add_to_route(char from_router, struct routing_entry *entry) {
 
 
 void process_neighbour_routing_table(struct routing_entry table[]) {
-	// TODO
+	char origin = get_routing_table_owner(table);
+
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		add_to_route(origin, &table[i]);
+	}
 }
 
 
@@ -274,6 +278,7 @@ void broadcast_local_routing_table(int **socket, char *socket_port) {
 int main(int argc, char *argv[]) {
 	struct epoll_event events[EPOLL_EVENT_COUNT];
 	struct routing_entry incoming_table[MAX_ROUTING_TABLE_SIZE];
+	int recv_len;
 
 	validate_cli_args(argc, argv);
 	initialize_routing_table();
@@ -371,9 +376,16 @@ int main(int argc, char *argv[]) {
 			} else {
 				// Data on an existing socket: sock_remote1, sock_remote2 or an element of sock_accepted[]
 				// This is an incoming routing table
-				// TODO
+				recv_len = tcp_receive(events[i].data.fd, incoming_table, sizeof(incoming_table));
 
+				if (recv_len != sizeof(incoming_table)) {
+					fprintf(
+						stderr,
+						"Received unexpected message size, discarding!\n");
+					continue;
+				}
 
+				process_neighbour_routing_table(incoming_table);
 			}
 		}
 	}
