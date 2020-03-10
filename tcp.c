@@ -20,7 +20,7 @@
 
 
 
-int tcp_client_init(char *host, char *port) {
+int tcp_client_init(const char *host, const char *port) {
 	int rv, fd;
 	struct addrinfo hints, *servinfo, *p;
 
@@ -58,7 +58,7 @@ int tcp_client_init(char *host, char *port) {
 }
 
 
-int tcp_server_init(char *port) {
+int tcp_server_init(const char *port) {
 	struct addrinfo hints;
 	struct addrinfo *servinfo, *p;
 	int sockfd, rv, yes = 1;

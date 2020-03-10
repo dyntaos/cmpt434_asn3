@@ -17,8 +17,8 @@
 #define BACKLOG 20
 
 
-int tcp_client_init(char *host, char *port);
-int tcp_server_init(char *port);
+int tcp_client_init(const char *host, const char *port);
+int tcp_server_init(const char *port);
 int tcp_accept(int sock_fd);
 int tcp_receive(int socket, void *buffer, size_t buffer_len);
 int tcp_send(int socket, void *buffer, size_t buffer_len);

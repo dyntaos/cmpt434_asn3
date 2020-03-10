@@ -139,7 +139,7 @@ struct routing_entry *find_router_entry(char router, struct routing_entry table[
 void add_to_route(char from_router, struct routing_entry *entry) {
 	struct routing_entry *local_entry = NULL;
 
-	if (from_router = 0) return;
+	if (from_router == 0) return;
 	if (entry == NULL) return;
 	if (entry->router_name == 0) return;
 
@@ -258,24 +258,24 @@ void validate_cli_args(int argc, char *argv[]) {
 
 
 
-void send_routing_table(int **socket, char *socket_port, bool reopen_if_closed) {
+void send_routing_table(int *socket, char *socket_port, bool reopen_if_closed) {
 	int result;
 
-	if (**socket > 0) {
-		result = tcp_send(**socket, routing_table, sizeof(routing_table));
+	if (*socket > 0) {
+		result = tcp_send(*socket, routing_table, sizeof(routing_table));
 
 		if (result < 0) {
 			// Connection was closed
-			close(**socket); // Ensure it is fully closed
+			close(*socket); // Ensure it is fully closed
 
 			if (reopen_if_closed) {
 				// Try and reopen - send routing table next timeout
 				// The socket will have already been deregistered from the epoll socket
 				*socket = tcp_client_init(localhost, socket_port);
-				epoll_add(epollfd, **socket);
+				epoll_add(epollfd, *socket);
 
 			} else {
-				**socket = -1;
+				*socket = -1;
 			}
 		}
 	}
@@ -318,7 +318,7 @@ int main(int argc, char *argv[]) {
 	if (sock_listen <= 0) {
 		fprintf(
 			stderr,
-			"[%s : %d]: Failed to open a server socket on port %d\n",
+			"[%s : %d]: Failed to open a server socket on port %s\n",
 			__FILE__,
 			__LINE__,
 			local_port);
@@ -331,7 +331,7 @@ int main(int argc, char *argv[]) {
 	if (sock_remote1 <= 0) {
 		fprintf(
 			stderr,
-			"[%s : %d]: Failed to open a client socket to remote port 1: %d\n",
+			"[%s : %d]: Failed to open a client socket to remote port 1: %s\n",
 			__FILE__,
 			__LINE__,
 			remote_port1);
@@ -345,7 +345,7 @@ int main(int argc, char *argv[]) {
 		if (sock_remote1 <= 0) {
 			fprintf(
 				stderr,
-				"[%s : %d]: Failed to open a client socket to remote port 2: %d\n",
+				"[%s : %d]: Failed to open a client socket to remote port 2: %s\n",
 				__FILE__,
 				__LINE__,
 				remote_port2);
