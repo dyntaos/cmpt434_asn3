@@ -29,6 +29,7 @@
 
 typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 
+#define LINK_WEIGHT_COST				1
 #define MAX_ROUTING_TABLE_SIZE			26
 #define ROUTING_BROADCAST_INTERVAL_MS	2000
 #define ROUTE_COST_INFINITY				(~((route_cost_t) 0))
@@ -131,6 +132,34 @@ struct routing_entry *find_router_entry(char router, struct routing_entry table[
 		}
 	}
 	return NULL;
+}
+
+
+
+void add_to_route(char from_router, struct routing_entry *entry) {
+	struct routing_entry *local_entry = NULL;
+
+	if (from_router = 0) return;
+	if (entry == NULL) return;
+	if (entry->router_name == 0) return;
+
+	local_entry = find_router_entry(entry->router_name, routing_table);
+	if (local_entry == NULL) {
+		// Don't have a record of this router name, try and create one
+		local_entry = find_router_entry(0, routing_table);
+
+		if (local_entry == NULL)
+			return; // Routing table is full, abort
+
+	} else {
+		// Found an existing entry for this router in the table, check costs
+		if (local_entry->cost <= entry->cost + LINK_WEIGHT_COST)
+			return; // Don't save a new route if it isn't shorter than the existing route
+	}
+
+	local_entry->router_name = entry->router_name;
+	local_entry->cost = entry->cost + LINK_WEIGHT_COST;
+	local_entry->next_hop_router = from_router;
 }
 
 
