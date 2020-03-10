@@ -79,7 +79,7 @@ struct router_interface *get_available_accept_socket_interface(void) {
 }
 
 
-void initialize_routing_table(void) {
+void initialize(void) {
 	routing_table[0].router_name = local_name;
 	routing_table[0].cost = 0;
 	routing_table[0].next_hop_router = 0;
@@ -373,7 +373,7 @@ int main(int argc, char *argv[]) {
 	int recv_len;
 
 	validate_cli_args(argc, argv);
-	initialize_routing_table();
+	initialize();
 
 
 	epollfd = epoll_setup();
