@@ -258,18 +258,37 @@ void validate_cli_args(int argc, char *argv[]) {
 
 
 
-void broadcast_local_routing_table(int **socket, char *socket_port) {
+void send_routing_table(int **socket, char *socket_port, bool reopen_if_closed) {
 	int result;
 
 	if (**socket > 0) {
 		result = tcp_send(**socket, routing_table, sizeof(routing_table));
 
 		if (result < 0) {
-			// Connection was closed, try and reopen - send routing table next timeout
-			// The socket will have already been deregistered from the epoll socket
-			*socket = tcp_client_init(localhost, socket_port);
-			epoll_add(epollfd, **socket);
+			// Connection was closed
+			close(**socket); // Ensure it is fully closed
+
+			if (reopen_if_closed) {
+				// Try and reopen - send routing table next timeout
+				// The socket will have already been deregistered from the epoll socket
+				*socket = tcp_client_init(localhost, socket_port);
+				epoll_add(epollfd, **socket);
+
+			} else {
+				**socket = -1;
+			}
 		}
+	}
+}
+
+
+
+void broadcast_routing_table(void) {
+	send_routing_table(&sock_remote1, remote_port1, true);
+	send_routing_table(&sock_remote2, remote_port2, true);
+
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		send_routing_table(&sock_accepted[i], NULL, false);
 	}
 }
 
@@ -347,8 +366,7 @@ int main(int argc, char *argv[]) {
 
 		if (epoll_count == 0) {
 			print_routing_table();
-			broadcast_local_routing_table(&sock_remote1, remote_port1);
-			broadcast_local_routing_table(&sock_remote2, remote_port2);
+			broadcast_routing_table();
 			continue;
 		}
 
