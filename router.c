@@ -31,7 +31,7 @@ typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 
 #define LINK_WEIGHT_COST				1
 #define MAX_ROUTING_TABLE_SIZE			26
-#define ROUTING_BROADCAST_INTERVAL		10
+#define ROUTING_BROADCAST_INTERVAL		6
 #define ROUTE_COST_INFINITY				(~((route_cost_t) 0))
 
 #define EPOLL_EVENT_COUNT				(3 + MAX_ROUTING_TABLE_SIZE)
@@ -112,11 +112,11 @@ void print_routing_table(void) {
 		if (routing_table[i].router_name == 0) continue;
 
 		printf("'%c'\t\t", routing_table[i].router_name);
-		// if (routing_table[i].cost == ROUTE_COST_INFINITY) {
-		// 	printf("INF\t\t");
-		// } else {
+		if (routing_table[i].cost == ROUTE_COST_INFINITY) {
+			printf("INF\t\t");
+		} else {
 			printf("%u\t\t", routing_table[i].cost);
-		//}
+		}
 		if (routing_table[i].next_hop_router == 0) {
 			printf(" \n");
 		} else {
@@ -167,12 +167,12 @@ void add_to_route(char from_router, struct routing_entry *entry) {
 
 	} else {
 		// Found an existing entry for this router in the table, check costs
-		if (local_entry->cost <= entry->cost + LINK_WEIGHT_COST)
+		if (local_entry->cost <= entry->cost + LINK_WEIGHT_COST && local_entry->next_hop_router != from_router)
 			return; // Don't save a new route if it isn't shorter than the existing route
 	}
 
 	local_entry->router_name = entry->router_name;
-	local_entry->cost = entry->cost + LINK_WEIGHT_COST;
+	local_entry->cost = (entry->cost == ROUTE_COST_INFINITY) ? ROUTE_COST_INFINITY : entry->cost + LINK_WEIGHT_COST;
 	local_entry->next_hop_router = from_router;
 }
 
@@ -350,7 +350,10 @@ void associate_socket_to_router_name(int sock_fd, struct routing_entry table[]) 
 
 
 void prune_routing_table(void) {
+	bool found;
+
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		found = false;
 		if (routing_table[i].router_name == 0) continue;
 		if (routing_table[i].router_name == local_name) continue;
 
@@ -358,9 +361,12 @@ void prune_routing_table(void) {
 		if (routing_table[i].next_hop_router == remote2.name) continue;
 
 		for (uint32_t k = 0; k < MAX_ROUTING_TABLE_SIZE; k++) {
-			if (routing_table[i].next_hop_router == accepted_connections[k].name)
-				continue;
+			if (accepted_connections[k].socket > 0 && routing_table[i].next_hop_router == accepted_connections[k].name) {
+				found = true;
+				break;
+			}
 		}
+		if (found) continue;
 
 		// If execution reaches here, there is no live socket
 		// to the next hop of that route entry, so remove the entry
@@ -518,8 +524,7 @@ int main(int argc, char *argv[]) {
 				process_neighbour_routing_table(incoming_table);
 			}
 		}
-
-		//prune_routing_table();
+		prune_routing_table();
 	}
 
 
