@@ -324,11 +324,13 @@ void associate_socket_to_router_name(int sock_fd, struct routing_entry table[]) 
 	} else {
 		for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
 			if (sock_fd == accepted_connections[i].socket) {
-				accepted_connections[i].name = origin;
-				return;
+				router = &accepted_connections[i];
+				break;
 			}
 		}
 	}
+	if (router != NULL)
+		router->name = origin;
 }
 
 
@@ -434,11 +436,11 @@ int main(int argc, char *argv[]) {
 			if (events[i].data.fd == sock_listen) {
 				// New incoming connection - accept if possible and register with epoll
 				int sock_temp;
-				int *sock_fd = get_available_accept_socket_int();
+				struct router_interface *router = get_available_accept_socket_interface();
 
 				sock_temp = tcp_accept(sock_listen);
 
-				if (sock_fd == NULL) {
+				if (router == NULL) {
 					fprintf(
 						stderr,
 						"Received incomming connection request when all available sockets are already in use; rejecting!\n");
@@ -446,8 +448,8 @@ int main(int argc, char *argv[]) {
 					continue;
 				}
 
-				*sock_fd = sock_temp;
-				epoll_add(epollfd, *sock_fd);
+				router->socket = sock_temp;
+				epoll_add(epollfd, router->socket);
 
 
 			} else {
