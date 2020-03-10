@@ -14,6 +14,8 @@
 #include <string.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 
 #include "tcp.h"

@@ -11,8 +11,6 @@
 #ifndef _TCP_H
 #define _TCP_H
 
-#include <sys/socket.h>
-#include <netdb.h>
 
 #define BACKLOG 20
 

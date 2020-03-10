@@ -17,10 +17,6 @@
 #include <ctype.h>
 #include <sys/epoll.h>
 #include <time.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netdb.h>
 #include <stdbool.h>
 
 #include "tcp.h"
@@ -31,7 +27,7 @@ typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 
 #define LINK_WEIGHT_COST				1
 #define MAX_ROUTING_TABLE_SIZE			26
-#define ROUTING_BROADCAST_INTERVAL		6
+#define ROUTING_BROADCAST_INTERVAL		2
 #define ROUTE_COST_INFINITY				(~((route_cost_t) 0))
 
 #define EPOLL_EVENT_COUNT				(3 + MAX_ROUTING_TABLE_SIZE)
@@ -70,12 +66,6 @@ int epollfd,
 time_t last_broadcast = 0;
 
 
-
-void *get_in_addr(struct sockaddr *sa) {
-	if (sa->sa_family == AF_INET)
-		return &(((struct sockaddr_in*)sa)->sin_addr);
-	return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
 
 
 struct router_interface *get_available_accept_socket_interface(void) {
