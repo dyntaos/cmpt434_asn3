@@ -31,7 +31,7 @@ typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 
 #define LINK_WEIGHT_COST				1
 #define MAX_ROUTING_TABLE_SIZE			26
-#define ROUTING_BROADCAST_INTERVAL_MS	2000
+#define ROUTING_BROADCAST_INTERVAL		10
 #define ROUTE_COST_INFINITY				(~((route_cost_t) 0))
 
 #define EPOLL_EVENT_COUNT				(3 + MAX_ROUTING_TABLE_SIZE)
@@ -66,6 +66,8 @@ struct router_interface remote1,
 
 int epollfd,
 	epoll_count;
+
+time_t last_broadcast = 0;
 
 
 
@@ -110,17 +112,18 @@ void print_routing_table(void) {
 		if (routing_table[i].router_name == 0) continue;
 
 		printf("'%c'\t\t", routing_table[i].router_name);
-		if (routing_table[i].cost == ROUTE_COST_INFINITY) {
-			printf("INF\t\t");
-		} else {
-			printf("%d\t\t", routing_table[i].cost);
-		}
+		// if (routing_table[i].cost == ROUTE_COST_INFINITY) {
+		// 	printf("INF\t\t");
+		// } else {
+			printf("%u\t\t", routing_table[i].cost);
+		//}
 		if (routing_table[i].next_hop_router == 0) {
-			printf(" \n\n");
+			printf(" \n");
 		} else {
-			printf("'%c'\n\n", routing_table[i].next_hop_router);
+			printf("'%c'\n", routing_table[i].next_hop_router);
 		}
 	}
+	printf("\n");
 }
 
 
@@ -128,7 +131,7 @@ void print_routing_table(void) {
 char get_routing_table_owner(struct routing_entry table[]) {
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
 		if (table[i].cost == 0 && table[i].router_name != 0) {
-			return table[i].next_hop_router;
+			return table[i].router_name;
 		}
 	}
 	return 0;
@@ -308,8 +311,8 @@ void send_routing_table(struct router_interface *router, char *socket_port, bool
 
 
 void broadcast_routing_table(void) {
-	send_routing_table(&remote1, remote_port1, true);
-	send_routing_table(&remote2, remote_port2, true);
+	if (remote_port1 != NULL) send_routing_table(&remote1, remote_port1, true);
+	if (remote_port2 != NULL) send_routing_table(&remote2, remote_port2, true);
 
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
 		send_routing_table(&accepted_connections[i], NULL, false);
@@ -429,14 +432,17 @@ int main(int argc, char *argv[]) {
 		epoll_add(epollfd, remote2.socket);
 	}
 
+	last_broadcast = time(NULL);
 
 	for (;;) {
+		int timeout = (last_broadcast - time(NULL) + ROUTING_BROADCAST_INTERVAL) * 1000;
+		if (timeout < 0) timeout = 0;
 
 		epoll_count = epoll_wait(
 			epollfd,
 			events,
 			EPOLL_EVENT_COUNT,
-			ROUTING_BROADCAST_INTERVAL_MS);
+			timeout);
 
 		if (epoll_count == -1) {
 			perror("epoll_wait");
@@ -446,6 +452,7 @@ int main(int argc, char *argv[]) {
 		if (epoll_count == 0) {
 			print_routing_table();
 			broadcast_routing_table();
+			last_broadcast = time(NULL);
 			continue;
 		}
 
@@ -512,7 +519,7 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
-		prune_routing_table();
+		//prune_routing_table();
 	}
 
 

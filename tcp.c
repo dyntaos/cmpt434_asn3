@@ -47,11 +47,8 @@ int tcp_client_init(const char *host, const char *port) {
 	}
 
 	if (p == NULL) {
-		fprintf(stderr, "Failed to connect to server\n");
 		return -2;
 	}
-
-	printf("Connected...\n");
 
 	freeaddrinfo(servinfo);
 	return fd;
