@@ -35,6 +35,7 @@ typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 
 #define EPOLL_EVENT_COUNT				(3 + MAX_ROUTING_TABLE_SIZE)
 
+const char localhost[] = "127.0.0.1";
 
 
 struct routing_entry {
@@ -57,6 +58,8 @@ int sock_listen = 0,
 	sock_remote1 = 0,
 	sock_remote2 = 0;
 
+int epollfd,
+	epoll_count;
 
 
 void *get_in_addr(struct sockaddr *sa) {
@@ -72,18 +75,70 @@ int *get_available_accept_socket_int(void) {
 			return &sock_accepted[i];
 		}
 	}
-	return -1;
+	return NULL;
 }
 
 
 void initialize_routing_table(void) {
-	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+	routing_table[0].router_name = local_name;
+	routing_table[0].cost = 0;
+	routing_table[0].next_hop_router = 0;
+
+	for (uint32_t i = 1; i < MAX_ROUTING_TABLE_SIZE; i++) {
 		routing_table[i].router_name = 0;             // 0 indicates unset (no router can have the name '\0')
 		routing_table[i].cost = ROUTE_COST_INFINITY;
 		routing_table[i].next_hop_router = 0;         // 0 indicates unset (no router can have the name '\0')
 		sock_accepted[i] = -1;
 	}
 }
+
+
+
+void print_routing_table(void) {
+	printf(">> Routing Table for '%c' on port %s <<\n", local_name, local_port);
+	printf("Destination\tCost\tNextHop\n");
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		if (routing_table[i].router_name == 0) continue;
+
+		printf("'%c'\t", routing_table[i].router_name);
+		if (routing_table[i].cost == ROUTE_COST_INFINITY) {
+			printf("INF\t");
+		} else {
+			printf("%d\t", routing_table[i].cost);
+		}
+		printf("'%c'\n", routing_table[i].next_hop_router);
+	}
+	printf("\n");
+}
+
+
+
+char find_routing_table_owner(struct routing_entry table[]) {
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		if (table[i].cost == 0 && table[i].router_name != 0) {
+			return table[i].next_hop_router;
+		}
+	}
+	return 0;
+}
+
+
+
+struct routing_entry *find_router_entry(char router, struct routing_entry table[]) {
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		if (table[i].router_name == router) {
+			return &table[i];
+		}
+	}
+	return NULL;
+}
+
+
+
+void process_neighbour_routing_table(struct routing_entry table[]) {
+	// TODO
+}
+
 
 
 int epoll_setup(void) {
@@ -111,12 +166,6 @@ int epoll_add(int epollfd, int fd) {
 		return -1;
 	}
 	return 0;
-}
-
-
-
-void service_timeout(void) {
-	// TODO
 }
 
 
@@ -176,9 +225,24 @@ void validate_cli_args(int argc, char *argv[]) {
 
 
 
+void broadcast_local_routing_table(int **socket, char *socket_port) {
+	int result;
+
+	if (**socket > 0) {
+		result = tcp_send(**socket, routing_table, sizeof(routing_table));
+
+		if (result < 0) {
+			// Connection was closed, try and reopen - send routing table next timeout
+			// The socket will have already been deregistered from the epoll socket
+			*socket = tcp_client_init(localhost, socket_port);
+			epoll_add(epollfd, **socket);
+		}
+	}
+}
+
+
+
 int main(int argc, char *argv[]) {
-	int epollfd,
-		epoll_count;
 	struct epoll_event events[EPOLL_EVENT_COUNT];
 	struct routing_entry incoming_table[MAX_ROUTING_TABLE_SIZE];
 
@@ -210,7 +274,7 @@ int main(int argc, char *argv[]) {
 	epoll_add(epollfd, sock_listen);
 
 
-	sock_remote1 = tcp_client_init("127.0.0.1", remote_port1);
+	sock_remote1 = tcp_client_init(localhost, remote_port1);
 	if (sock_remote1 <= 0) {
 		fprintf(
 			stderr,
@@ -224,7 +288,7 @@ int main(int argc, char *argv[]) {
 
 
 	if (remote_port2 != NULL) {
-		sock_remote2 = tcp_client_init("127.0.0.1", remote_port2);
+		sock_remote2 = tcp_client_init(localhost, remote_port2);
 		if (sock_remote1 <= 0) {
 			fprintf(
 				stderr,
@@ -248,19 +312,36 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (epoll_count == 0) {
-			service_timeout();
+			print_routing_table();
+			broadcast_local_routing_table(&sock_remote1, remote_port1);
+			broadcast_local_routing_table(&sock_remote2, remote_port2);
 			continue;
 		}
 
 		for (int i = 0; i < epoll_count; i++) {
 
 			if (events[i].data.fd == sock_listen) {
-				// New incoming connection
-				// TODO
+				// New incoming connection - accept if possible and register with epoll
+				int sock_temp;
+				int *sock_fd = get_available_accept_socket_int();
+
+				sock_temp = tcp_accept(sock_listen);
+
+				if (sock_fd == NULL) {
+					fprintf(
+						stderr,
+						"Received incomming connection request when all available sockets are already in use; rejecting!\n");
+					close(sock_temp);
+					continue;
+				}
+
+				*sock_fd = sock_temp;
+				epoll_add(epollfd, *sock_fd);
 
 
 			} else {
 				// Data on an existing socket: sock_remote1, sock_remote2 or an element of sock_accepted[]
+				// This is an incoming routing table
 				// TODO
 
 
