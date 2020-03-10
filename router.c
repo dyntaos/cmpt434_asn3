@@ -109,19 +109,18 @@ void print_routing_table(void) {
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
 		if (routing_table[i].router_name == 0) continue;
 
-		printf("'%c'\t", routing_table[i].router_name);
+		printf("'%c'\t\t", routing_table[i].router_name);
 		if (routing_table[i].cost == ROUTE_COST_INFINITY) {
-			printf("INF\t");
+			printf("INF\t\t");
 		} else {
-			printf("%d\t", routing_table[i].cost);
+			printf("%d\t\t", routing_table[i].cost);
 		}
 		if (routing_table[i].next_hop_router == 0) {
-			printf(" \t");
+			printf(" \n\n");
 		} else {
-			printf("'%c'\n", routing_table[i].next_hop_router);
+			printf("'%c'\n\n", routing_table[i].next_hop_router);
 		}
 	}
-	printf("\n");
 }
 
 
@@ -217,7 +216,7 @@ int epoll_add(int epollfd, int fd) {
 
 void validate_cli_args(int argc, char *argv[]) {
 
-	if (argc < 2 || argc > 5) {
+	if (argc < 3 || argc > 5) {
 		printf(
 			"Usage: %s LocalRouterLetterName LocalPort [RemotePort1] [RemotePort2]\n\n",
 			argv[0]);
