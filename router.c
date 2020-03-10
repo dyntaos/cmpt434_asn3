@@ -39,12 +39,16 @@ typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 const char localhost[] = "127.0.0.1";
 
 
+struct router_interface {
+	int socket;
+	char name;
+};
+
 struct routing_entry {
 	char         router_name;
 	route_cost_t cost;
 	char         next_hop_router;
 };
-
 
 struct routing_entry routing_table[MAX_ROUTING_TABLE_SIZE];
 
@@ -54,13 +58,15 @@ char *local_port   = NULL,
 	 *remote_port1 = NULL,
 	 *remote_port2 = NULL;
 
-int sock_listen = 0,
-	sock_accepted[MAX_ROUTING_TABLE_SIZE],
-	sock_remote1 = 0,
-	sock_remote2 = 0;
+int sock_listen = 0;
+
+struct router_interface remote1,
+						remote2,
+						accepted_connections[MAX_ROUTING_TABLE_SIZE];
 
 int epollfd,
 	epoll_count;
+
 
 
 void *get_in_addr(struct sockaddr *sa) {
@@ -70,10 +76,11 @@ void *get_in_addr(struct sockaddr *sa) {
 }
 
 
-int *get_available_accept_socket_int(void) {
+struct router_interface *get_available_accept_socket_interface(void) {
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
-		if (sock_accepted[i] < 1) {
-			return &sock_accepted[i];
+		if (accepted_connections[i].socket < 1) {
+			accepted_connections[i].name = 0;
+			return &accepted_connections[i];
 		}
 	}
 	return NULL;
@@ -89,7 +96,8 @@ void initialize_routing_table(void) {
 		routing_table[i].router_name = 0;             // 0 indicates unset (no router can have the name '\0')
 		routing_table[i].cost = ROUTE_COST_INFINITY;
 		routing_table[i].next_hop_router = 0;         // 0 indicates unset (no router can have the name '\0')
-		sock_accepted[i] = -1;
+		accepted_connections[i].socket = -1;
+		accepted_connections[i].name = 0;
 	}
 }
 
@@ -107,7 +115,11 @@ void print_routing_table(void) {
 		} else {
 			printf("%d\t", routing_table[i].cost);
 		}
-		printf("'%c'\n", routing_table[i].next_hop_router);
+		if (routing_table[i].next_hop_router == 0) {
+			printf(" \t");
+		} else {
+			printf("'%c'\n", routing_table[i].next_hop_router);
+		}
 	}
 	printf("\n");
 }
@@ -258,24 +270,25 @@ void validate_cli_args(int argc, char *argv[]) {
 
 
 
-void send_routing_table(int *socket, char *socket_port, bool reopen_if_closed) {
+void send_routing_table(struct router_interface *router, char *socket_port, bool reopen_if_closed) {
 	int result;
 
-	if (*socket > 0) {
-		result = tcp_send(*socket, routing_table, sizeof(routing_table));
+	if (router->socket > 0) {
+		result = tcp_send(router->socket, routing_table, sizeof(routing_table));
 
 		if (result < 0) {
 			// Connection was closed
-			close(*socket); // Ensure it is fully closed
+			close(router->socket); // Ensure it is fully closed
 
 			if (reopen_if_closed) {
 				// Try and reopen - send routing table next timeout
 				// The socket will have already been deregistered from the epoll socket
-				*socket = tcp_client_init(localhost, socket_port);
-				epoll_add(epollfd, *socket);
+				router->socket = tcp_client_init(localhost, socket_port);
+				epoll_add(epollfd, router->socket);
 
 			} else {
-				*socket = -1;
+				router->socket = -1;
+				router->name = 0;
 			}
 		}
 	}
@@ -284,11 +297,57 @@ void send_routing_table(int *socket, char *socket_port, bool reopen_if_closed) {
 
 
 void broadcast_routing_table(void) {
-	send_routing_table(&sock_remote1, remote_port1, true);
-	send_routing_table(&sock_remote2, remote_port2, true);
+	send_routing_table(&remote1, remote_port1, true);
+	send_routing_table(&remote2, remote_port2, true);
 
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
-		send_routing_table(&sock_accepted[i], NULL, false);
+		send_routing_table(&accepted_connections[i], NULL, false);
+	}
+}
+
+
+
+void associate_socket_to_router_name(int sock_fd, struct routing_entry table[]) {
+	struct router_interface *router = NULL;
+	char origin;
+
+	if (sock_fd <= 0) return;
+	if (table == NULL) return;
+
+	origin = get_routing_table_owner(table);
+	if (origin == 0) return;
+
+	if (sock_fd == remote1.socket) {
+		router = &remote1;
+	} else if (sock_fd == remote2.socket) {
+		router = &remote2;
+	} else {
+		for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+			if (sock_fd == accepted_connections[i].socket) {
+				accepted_connections[i].name = origin;
+				return;
+			}
+		}
+	}
+}
+
+
+
+void prune_routing_table(void) {
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		if (routing_table[i].router_name == 0) continue;
+		if (routing_table[i].router_name == local_name) continue;
+
+		if (routing_table[i].next_hop_router == remote1.name) continue;
+		if (routing_table[i].next_hop_router == remote2.name) continue;
+
+		for (uint32_t k = 0; k < MAX_ROUTING_TABLE_SIZE; k++) {
+			if (routing_table[i].next_hop_router == accepted_connections[k].name) continue;
+		}
+
+		// If execution reaches here, there is no live socket to the next hop of that route entry, so remove the entry
+		routing_table[i].cost = ROUTE_COST_INFINITY;
+		routing_table[i].next_hop_router = 0;
 	}
 }
 
@@ -327,8 +386,8 @@ int main(int argc, char *argv[]) {
 	epoll_add(epollfd, sock_listen);
 
 
-	sock_remote1 = tcp_client_init(localhost, remote_port1);
-	if (sock_remote1 <= 0) {
+	remote1.socket = tcp_client_init(localhost, remote_port1);
+	if (remote1.socket <= 0) {
 		fprintf(
 			stderr,
 			"[%s : %d]: Failed to open a client socket to remote port 1: %s\n",
@@ -337,12 +396,12 @@ int main(int argc, char *argv[]) {
 			remote_port1);
 		exit(EXIT_FAILURE);
 	}
-	epoll_add(epollfd, sock_remote1);
+	epoll_add(epollfd, remote1.socket);
 
 
 	if (remote_port2 != NULL) {
-		sock_remote2 = tcp_client_init(localhost, remote_port2);
-		if (sock_remote1 <= 0) {
+		remote2.socket = tcp_client_init(localhost, remote_port2);
+		if (remote2.socket <= 0) {
 			fprintf(
 				stderr,
 				"[%s : %d]: Failed to open a client socket to remote port 2: %s\n",
@@ -351,7 +410,7 @@ int main(int argc, char *argv[]) {
 				remote_port2);
 			exit(EXIT_FAILURE);
 		}
-		epoll_add(epollfd, sock_remote2);
+		epoll_add(epollfd, remote2.socket);
 	}
 
 
@@ -403,9 +462,12 @@ int main(int argc, char *argv[]) {
 					continue;
 				}
 
+				associate_socket_to_router_name(events[i].data.fd, incoming_table);
 				process_neighbour_routing_table(incoming_table);
 			}
 		}
+
+		prune_routing_table();
 	}
 
 
