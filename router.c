@@ -29,10 +29,12 @@
 
 typedef uint32_t route_cost_t; // May be changed, but must be unsigned
 
-#define EPOLL_EVENT_COUNT			2
+#define MAX_ROUTING_TABLE_SIZE			26
+#define ROUTING_BROADCAST_INTERVAL_MS	2000
+#define ROUTE_COST_INFINITY				(~((route_cost_t) 0))
 
-#define MAX_ROUTING_TABLE_SIZE		26
-#define ROUTE_COST_INFINITY			(~((route_cost_t) 0))
+#define EPOLL_EVENT_COUNT				(3 + MAX_ROUTING_TABLE_SIZE)
+
 
 
 struct routing_entry {
@@ -50,7 +52,9 @@ char *local_port   = NULL,
 	 *remote_port1 = NULL,
 	 *remote_port2 = NULL;
 
-int sock_remote1 = 0,
+int sock_listen = 0,
+	sock_accepted[MAX_ROUTING_TABLE_SIZE],
+	sock_remote1 = 0,
 	sock_remote2 = 0;
 
 
@@ -62,11 +66,22 @@ void *get_in_addr(struct sockaddr *sa) {
 }
 
 
+int *get_available_accept_socket_int(void) {
+	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
+		if (sock_accepted[i] < 1) {
+			return &sock_accepted[i];
+		}
+	}
+	return -1;
+}
+
+
 void initialize_routing_table(void) {
 	for (uint32_t i = 0; i < MAX_ROUTING_TABLE_SIZE; i++) {
 		routing_table[i].router_name = 0;             // 0 indicates unset (no router can have the name '\0')
 		routing_table[i].cost = ROUTE_COST_INFINITY;
 		routing_table[i].next_hop_router = 0;         // 0 indicates unset (no router can have the name '\0')
+		sock_accepted[i] = -1;
 	}
 }
 
@@ -96,6 +111,12 @@ int epoll_add(int epollfd, int fd) {
 		return -1;
 	}
 	return 0;
+}
+
+
+
+void service_timeout(void) {
+	// TODO
 }
 
 
@@ -156,14 +177,13 @@ void validate_cli_args(int argc, char *argv[]) {
 
 
 int main(int argc, char *argv[]) {
-	int epollfd, epoll_count;
+	int epollfd,
+		epoll_count;
 	struct epoll_event events[EPOLL_EVENT_COUNT];
-
+	struct routing_entry incoming_table[MAX_ROUTING_TABLE_SIZE];
 
 	validate_cli_args(argc, argv);
 	initialize_routing_table();
-
-	// TODO: Open sockets
 
 
 	epollfd = epoll_setup();
@@ -176,13 +196,51 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
-	epoll_add(epollfd, sock_rx_fd);
-	epoll_add(epollfd, sock_tx_fd);
+
+	sock_listen = tcp_server_init(local_port);
+	if (sock_listen <= 0) {
+		fprintf(
+			stderr,
+			"[%s : %d]: Failed to open a server socket on port %d\n",
+			__FILE__,
+			__LINE__,
+			local_port);
+		exit(EXIT_FAILURE);
+	}
+	epoll_add(epollfd, sock_listen);
+
+
+	sock_remote1 = tcp_client_init("127.0.0.1", remote_port1);
+	if (sock_remote1 <= 0) {
+		fprintf(
+			stderr,
+			"[%s : %d]: Failed to open a client socket to remote port 1: %d\n",
+			__FILE__,
+			__LINE__,
+			remote_port1);
+		exit(EXIT_FAILURE);
+	}
+	epoll_add(epollfd, sock_remote1);
+
+
+	if (remote_port2 != NULL) {
+		sock_remote2 = tcp_client_init("127.0.0.1", remote_port2);
+		if (sock_remote1 <= 0) {
+			fprintf(
+				stderr,
+				"[%s : %d]: Failed to open a client socket to remote port 2: %d\n",
+				__FILE__,
+				__LINE__,
+				remote_port2);
+			exit(EXIT_FAILURE);
+		}
+		epoll_add(epollfd, sock_remote2);
+	}
 
 
 	for (;;) {
 
-		epoll_count = epoll_wait(epollfd, events, EPOLL_EVENT_COUNT, get_timeout());
+		epoll_count = epoll_wait(epollfd, events, EPOLL_EVENT_COUNT, ROUTING_BROADCAST_INTERVAL_MS);
 
 		if (epoll_count == -1) {
 			perror("epoll_wait");
@@ -190,24 +248,22 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (epoll_count == 0) {
-			service_timeout(sock_tx_fd);
+			service_timeout();
 			continue;
 		}
 
 		for (int i = 0; i < epoll_count; i++) {
 
-			if (events[i].data.fd == sock_tx_fd) {
-
-			} else if (events[i].data.fd == sock_rx_fd) {
+			if (events[i].data.fd == sock_listen) {
+				// New incoming connection
+				// TODO
 
 
 			} else {
-				fprintf(
-					stderr,
-					"[%s : %d]: epoll_wait() returned an unknown file descriptor number!\n",
-					__FILE__,
-					__LINE__);
-				exit(EXIT_FAILURE);
+				// Data on an existing socket: sock_remote1, sock_remote2 or an element of sock_accepted[]
+				// TODO
+
+
 			}
 		}
 	}

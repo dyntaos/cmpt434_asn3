@@ -14,7 +14,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-#define BACKLOG 10
+#define BACKLOG 20
 
 
 int tcp_client_init(char *host, char *port);
