@@ -282,6 +282,11 @@ void send_routing_table(struct router_interface *router, char *socket_port, bool
 				// Try and reopen - send routing table next timeout
 				// The socket will have already been deregistered from the epoll socket
 				router->socket = tcp_client_init(localhost, socket_port);
+				if (router->socket <= 0) {
+					router->name = 0;
+					router->socket = -1;
+					return;
+				}
 				epoll_add(epollfd, router->socket);
 
 			} else {
@@ -289,6 +294,14 @@ void send_routing_table(struct router_interface *router, char *socket_port, bool
 				router->name = 0;
 			}
 		}
+	} else if (reopen_if_closed) {
+		router->socket = tcp_client_init(localhost, socket_port);
+		if (router->socket <= 0) {
+			router->name = 0;
+			router->socket = -1;
+			return;
+		}
+		epoll_add(epollfd, router->socket);
 	}
 }
 
@@ -342,10 +355,12 @@ void prune_routing_table(void) {
 		if (routing_table[i].next_hop_router == remote2.name) continue;
 
 		for (uint32_t k = 0; k < MAX_ROUTING_TABLE_SIZE; k++) {
-			if (routing_table[i].next_hop_router == accepted_connections[k].name) continue;
+			if (routing_table[i].next_hop_router == accepted_connections[k].name)
+				continue;
 		}
 
-		// If execution reaches here, there is no live socket to the next hop of that route entry, so remove the entry
+		// If execution reaches here, there is no live socket
+		// to the next hop of that route entry, so remove the entry
 		routing_table[i].cost = ROUTE_COST_INFINITY;
 		routing_table[i].next_hop_router = 0;
 	}
@@ -417,7 +432,11 @@ int main(int argc, char *argv[]) {
 
 	for (;;) {
 
-		epoll_count = epoll_wait(epollfd, events, EPOLL_EVENT_COUNT, ROUTING_BROADCAST_INTERVAL_MS);
+		epoll_count = epoll_wait(
+			epollfd,
+			events,
+			EPOLL_EVENT_COUNT,
+			ROUTING_BROADCAST_INTERVAL_MS);
 
 		if (epoll_count == -1) {
 			perror("epoll_wait");
@@ -442,7 +461,8 @@ int main(int argc, char *argv[]) {
 				if (router == NULL) {
 					fprintf(
 						stderr,
-						"Received incomming connection request when all available sockets are already in use; rejecting!\n");
+						"Received incomming connection request when all "
+						"available sockets are already in use; rejecting!\n");
 					close(sock_temp);
 					continue;
 				}
@@ -456,10 +476,34 @@ int main(int argc, char *argv[]) {
 				// This is an incoming routing table
 				recv_len = tcp_receive(events[i].data.fd, incoming_table, sizeof(incoming_table));
 
-				if (recv_len != sizeof(incoming_table)) {
+				if (recv_len == 0) {
+					// Connection closed -- an attempt to open CLI provided ports on broadcast
+					if (events[i].data.fd == remote1.socket) {
+						close(remote1.socket);
+						remote1.name = 0;
+						remote1.socket = -1;
+
+					} else if (events[i].data.fd == remote2.socket) {
+						close(remote2.socket);
+						remote2.name = 0;
+						remote2.socket = -1;
+
+					} else {
+						for (uint32_t j = 0; j < MAX_ROUTING_TABLE_SIZE; j++) {
+							if (events[i].data.fd == accepted_connections[j].socket) {
+								close(accepted_connections[j].socket);
+								accepted_connections[j].name = 0;
+								accepted_connections[j].socket = -1;
+								break;
+							}
+						}
+					}
+
+				} else if (recv_len != sizeof(incoming_table)) {
 					fprintf(
 						stderr,
-						"Received unexpected message size, discarding!\n");
+						"Received unexpected message size (%d), discarding!\n",
+						recv_len);
 					continue;
 				}
 
