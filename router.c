@@ -217,18 +217,17 @@ int epoll_add(int epollfd, int fd) {
 
 void validate_cli_args(int argc, char *argv[]) {
 
-	if (argc != 3 && argc != 4) {
+	if (argc < 2 || argc > 5) {
 		printf(
-			"Usage: %s ThisRouterLetterName LocalPort RemotePort [RemotePort2]\n\n",
+			"Usage: %s LocalRouterLetterName LocalPort [RemotePort1] [RemotePort2]\n\n",
 			argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
 	local_name = argv[1][0];
 	local_port = argv[2];
-	remote_port1 = argv[3];
-	if (argc == 4)
-		remote_port2 = argv[4];
+	if (argc == 4) remote_port1 = argv[3];
+	if (argc == 5) remote_port2 = argv[4];
 
 	if (strlen(argv[1]) > 1) {
 		fprintf(
@@ -246,7 +245,7 @@ void validate_cli_args(int argc, char *argv[]) {
 		}
 	}
 
-	for (size_t i = 0; i < strlen(remote_port1); i++) {
+	for (size_t i = 0; remote_port1 != NULL && i < strlen(remote_port1); i++) {
 		if (!isdigit(remote_port1[i])) {
 			fprintf(stderr, "The first remote port number provided must be numeric\n");
 			exit(EXIT_FAILURE);
@@ -387,18 +386,19 @@ int main(int argc, char *argv[]) {
 	}
 	epoll_add(epollfd, sock_listen);
 
-
-	remote1.socket = tcp_client_init(localhost, remote_port1);
-	if (remote1.socket <= 0) {
-		fprintf(
-			stderr,
-			"[%s : %d]: Failed to open a client socket to remote port 1: %s\n",
-			__FILE__,
-			__LINE__,
-			remote_port1);
-		exit(EXIT_FAILURE);
+	if (remote_port1 != NULL) {
+		remote1.socket = tcp_client_init(localhost, remote_port1);
+		if (remote1.socket <= 0) {
+			fprintf(
+				stderr,
+				"[%s : %d]: Failed to open a client socket to remote port 1: %s\n",
+				__FILE__,
+				__LINE__,
+				remote_port1);
+			exit(EXIT_FAILURE);
+		}
+		epoll_add(epollfd, remote1.socket);
 	}
-	epoll_add(epollfd, remote1.socket);
 
 
 	if (remote_port2 != NULL) {
