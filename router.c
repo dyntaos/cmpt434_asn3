@@ -399,34 +399,6 @@ int main(int argc, char *argv[]) {
 	}
 	epoll_add(epollfd, sock_listen);
 
-	if (remote_port1 != NULL) {
-		remote1.socket = tcp_client_init(localhost, remote_port1);
-		if (remote1.socket <= 0) {
-			fprintf(
-				stderr,
-				"[%s : %d]: Failed to open a client socket to remote port 1: %s\n",
-				__FILE__,
-				__LINE__,
-				remote_port1);
-			exit(EXIT_FAILURE);
-		}
-		epoll_add(epollfd, remote1.socket);
-	}
-
-
-	if (remote_port2 != NULL) {
-		remote2.socket = tcp_client_init(localhost, remote_port2);
-		if (remote2.socket <= 0) {
-			fprintf(
-				stderr,
-				"[%s : %d]: Failed to open a client socket to remote port 2: %s\n",
-				__FILE__,
-				__LINE__,
-				remote_port2);
-			exit(EXIT_FAILURE);
-		}
-		epoll_add(epollfd, remote2.socket);
-	}
 
 	last_broadcast = time(NULL);
 
